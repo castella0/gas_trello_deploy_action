@@ -4,12 +4,17 @@ var config = {
   TRELLO_APP_KEY: "XXXXXXXXXXXXXXXXXXXXXXXX",
   TRELLO_TOKEN: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 
+  TRELLO_BOARD: {
+    main: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+  },
+
   TRELLO_LIST: {
     waiting: "XXXXXXXXXXXXXXXXXXXXXXXXX",
     complete: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
   },
 
   TRELLO_API: {
+    get_lists: "https://api.trello.com/1/boards/{board_id}/lists?key={app_key}&token={token}&fields=name",
     get_cards : "https://api.trello.com/1/lists/{list_id}/cards?key={app_key}&token={token}",
     update_card : "https://api.trello.com/1/cards/{card_id}?key={app_key}&token={token}"
   },
@@ -17,6 +22,8 @@ var config = {
   TRELLO_LABEL_ID: {
     IF_DEBUG: "XXXXXXXXXXXXXXXXXXXXXXXXX",
   },
+
+  TRELLO_MOVETO_LIST_TITLE: "XXXX",
 
 
   CW_ENDPOINT: {
@@ -50,6 +57,7 @@ var  CHECK_LABEL = {
     ],
   }
 };
+**/
 
 
 function myFunction() {
@@ -64,7 +72,6 @@ function myFunction() {
   }
 
 }
-**/
 
 
 // チャットワークにカードのタイトルを投稿する
@@ -121,10 +128,13 @@ function moveCardToCompleteList(reflect_info) {
   }
 
   var moved_cards_title = [];
-  target_card_ids.forEach(function(card_id) {
-    var moved_card = moveCard(config.TRELLO_LIST.complete, card_id);
-    moved_cards_title.push(titleCleaner(moved_card.name));
-  });
+  var complete_list = getMoveToList();
+  if (complete_list) {
+    target_card_ids.forEach(function(card_id) {
+      var moved_card = moveCard(complete_list.id, card_id);
+      moved_cards_title.push(titleCleaner(moved_card.name));
+    });
+  }
 
   var body = "";
   if (moved_cards_title.length) {
@@ -136,7 +146,7 @@ function moveCardToCompleteList(reflect_info) {
     body += "[/info]";
     body += config.MSG_TEXT.end;
     body += "\n[/code]\n";
-    body += config.MSG_TEXT.complete;
+    body += "[" + complete_list.name + "]" + config.MSG_TEXT.complete;
   } else {
     body += config.MSG_TEXT.target_not_exists;
   }
@@ -298,6 +308,32 @@ function moveCard(list_id, card_id) {
 
   var response = UrlFetchApp.fetch(url, option);
   return JSON.parse(response.getContentText("UTF-8"));
+}
+
+
+// 移動先のリストを動的に取得
+function getMoveToList() {
+
+  var result = null;
+
+  var option = {
+    method: "get",
+  };
+  var url = config.TRELLO_API.get_lists.replace("{board_id}", config.TRELLO_BOARD.main);
+  url = url.replace("{app_key}", config.TRELLO_APP_KEY);
+  url = url.replace("{token}", config.TRELLO_TOKEN);
+
+  var response = UrlFetchApp.fetch(url, option);
+  var lists = JSON.parse(response.getContentText("UTF-8"));
+
+  for (var i = 0, lists_len = lists.length; i < lists_len; i++) {
+    if ( 0 == lists[i].name.indexOf(config.TRELLO_MOVETO_LIST_TITLE)) {
+      result = lists[i];
+      break;
+    }
+  }
+
+  return result;
 }
 
 
