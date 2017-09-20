@@ -49,7 +49,7 @@ var config = {
 
 };
 
-var  CHECK_LABEL = {
+var CHECK_LABEL = {
   full: {
     need_labels: [],
     ng_labels: [
@@ -71,6 +71,109 @@ function myFunction() {
     postTargetCardsInfo(reflect_info);
   }
 
+}
+
+
+// チャットワークのメッセージを確認し、実行するアクションを決定する
+function checkChatworkRequestMsg() {
+
+  var result = null;
+
+  // 投稿を取得
+  var msgs = UrlFetchApp.fetch(config.CW_ENDPOINT.rooms + config.CW_ROOM_ID + '/messages?force=1', {
+    headers: {
+      'X-ChatWorkToken': config.CW_TOKEN
+    },
+    method: 'get'
+  });
+  if (null == msgs || '' == msgs ) return result;
+
+  msgs = JSON.parse( msgs );
+  if (msgs.length < 1) return result;
+
+  var target_msgs = [];
+  // キャッシュに、前回取得した際の最新メッセージが残っている
+  var cache = CacheService.getScriptCache();
+  var last_message_id = cache.get(config.CACHE_KEY.last_message_id);
+
+  if (last_message_id) {
+    var pass_last_message = false;
+    msgs.forEach(function(value, index) {
+      if (pass_last_message) {
+        target_msgs.push(value);
+      }
+      if (value.message_id == last_message_id) {
+        // 前回の最新メッセージより新しいものから先が今回の対象
+        pass_last_message = true;
+      }
+    });
+  }
+
+  if (!target_msgs.length) {
+    target_msgs[0] = msgs[msgs.length-1];
+  }
+
+  var target_msg = null;
+  for (var i = 0, tmsgs_len = target_msgs.length; i < tmsgs_len; i++) {
+
+    var target_msg = target_msgs[i];
+    var check_strs = target_msg.body.split(/(\s+|　+)/);
+
+    // コマンドのトリガーチェック
+    var is_command = false;
+    for (var str_index = 0, str_len = config.CW_COMMAND.length; !is_command && str_index < str_len; str_index++) {
+      is_command = is_command || 0 <= check_strs.indexOf( config.CW_COMMAND[str_index] );
+    }
+    if (!is_command) {
+      continue;
+    }
+
+    // 終了コマンドチェック
+    var is_end = false;
+    for (var str_index = 0, str_len = config.CW_END_COMMAND.length; !is_end && str_index < str_len; str_index++) {
+      is_end = is_end || 0 <= check_strs.indexOf( config.CW_END_COMMAND[str_index] );
+    }
+    if (is_end) {
+      result = {
+        reflect_target: "done",
+        check_label: null,
+        msg: target_msg
+      };
+      break;
+    }
+
+    // その他コマンドチェック
+    var check_label_name = null;
+    for (var str_index = 0, str_len = check_strs.length; !check_label_name && str_index < str_len; str_index++) {
+      if (CHECK_LABEL[ check_strs[str_index] ]) {
+        check_label_name = check_strs[str_index];
+        break;
+      }
+    }
+    if (check_label_name) {
+      result = {
+        reflect_target: check_label_name,
+        check_label: CHECK_LABEL[check_label_name],
+        msg: target_msg
+      };
+
+    } else {
+      result = {
+        reflect_target: "full",
+        check_label: CHECK_LABEL.full,
+        msg: target_msg
+      };
+
+    }
+
+  }
+
+  if (result) {
+    // しおり
+    cache.put(config.CACHE_KEY.last_message_id, target_msg.message_id, 3600);
+  }
+
+  return result;
 }
 
 
@@ -146,7 +249,7 @@ function moveCardToCompleteList(reflect_info) {
     body += "[/info]";
     body += config.MSG_TEXT.end;
     body += "\n[/code]\n";
-    body += "[" + complete_list.name + "]" + config.MSG_TEXT.complete;
+    body += complete_list.name + config.MSG_TEXT.complete;
   } else {
     body += config.MSG_TEXT.target_not_exists;
   }
@@ -156,108 +259,6 @@ function moveCardToCompleteList(reflect_info) {
     body,
     reflect_info.msg);
 
-}
-
-
-// チャットワークのメッセージを確認し、実行するアクションを決定する
-function checkChatworkRequestMsg() {
-
-  var result = null;
-
-  // 投稿を取得
-  var msgs = UrlFetchApp.fetch(config.CW_ENDPOINT.rooms + config.CW_ROOM_ID + '/messages?force=1', {
-    headers: {
-      'X-ChatWorkToken': config.CW_TOKEN
-    },
-    method: 'get'
-  });
-  if (null == msgs || '' == msgs ) return result;
-
-  msgs = JSON.parse( msgs );
-  if (msgs.length < 1) return result;
-
-  var target_msgs = [];
-  // キャッシュに、前回取得した際の最新メッセージが残っている
-  var cache = CacheService.getScriptCache();
-  var last_message_id = cache.get(config.CACHE_KEY.last_message_id);
-
-  if (last_message_id) {
-    var pass_last_message = false;
-    msgs.forEach(function(value, index) {
-      if (pass_last_message) {
-        target_msgs.push(value);
-      }
-      if (value.message_id == last_message_id) {
-        // 前回の最新メッセージより新しいものから先が今回の対象
-        pass_last_message = true;
-      }
-    });
-  }
-
-  if (!target_msgs.length) {
-    target_msgs[0] = msgs[msgs.length-1];
-  }
-
-  var target_msg = null;
-  for (var i = 0, tmsgs_len = target_msgs.length; i < tmsgs_len; i++) {
-    var target_msg = target_msgs[i];
-    var check_strs = target_msg.body.split(/(\s+|　+)/);
-
-    for (var i2 = 0, check_len = check_strs.length; i2 < check_len; i2++) {
-      if ( 0 <= config.CW_COMMAND.indexOf( check_strs[i2] )) {
-
-        for (var i3 = 0; i3 < check_len; i3++) {
-
-          if ( 0 <= config.CW_END_COMMAND.indexOf( check_strs[i3] )) {
-            result = {
-              reflect_target: "done",
-              check_label: null,
-              msg: target_msg
-            };
-            break;
-
-          } else {
-
-            var check_label = CHECK_LABEL[check_strs[i3]];
-            if (check_label) {
-              result = {
-                reflect_target: check_strs[i3],
-                check_label: check_label,
-                msg: target_msg
-              };
-              break;
-            }
-
-          }
-
-        }
-
-        if (!result) {
-          result = {
-            reflect_target: "full",
-            check_label: CHECK_LABEL.full,
-            msg: target_msg
-          };
-        }
-      }
-
-      if (result) {
-        break;
-      }
-
-    }
-
-    if (result) {
-      break;
-    }
-
-  }
-
-  if (result) {
-    cache.put(config.CACHE_KEY.last_message_id, target_msg.message_id, 3600);
-  }
-
-  return result;
 }
 
 
@@ -288,7 +289,7 @@ function setCachePostCards(cards) {
   });
 
   var cache = CacheService.getScriptCache();
-  cache.put(config.CACHE_KEY.last_post_card_ids, card_ids.join(","), 3600);
+  cache.put(config.CACHE_KEY.last_post_card_ids, card_ids.join(","), 21600);
 }
 
 
